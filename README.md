@@ -8,4 +8,4 @@ It's a soft fork so doesn't do any big divergent changes and should be close to 
 
 Requires: Xcode, [MacPorts](https://macports.org], [ninja](https://ports.macports.org/port/ninja/), [pkgconfig](https://ports.macports.org/port/pkgconfig/), SDL2, [Neet-YSLua](https://codeberg.org/SpartanSoftware/Neet-YSLua).
 
-Clone neetemu-sdl2 and Neet-YSLua into the same directory, cd into neetemu-sdl2, and run `./compile.sh`. Run it with `run.sh`. Bundles have to be built manually atm, sorry!
+Clone neetemu-sdl2 and Neet-YSLua into the same directory, cd into neetemu-sdl2, and run `./compile.sh`. Create an application bundle with `bundle.sh {VERSION} {VERSION}`
