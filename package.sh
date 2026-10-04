@@ -30,7 +30,8 @@ CURPATH=$(pwd)
 cd /tmp
 git clone https://github.com/redtoast/NeetComputers.git
 cd NeetComputers/src/main/resources/data/neetcomputers/neet/hard_addresses
-cp -r ./1 "$CURPATH/MacOS/disk"
+mkdir "$CURPATH/MacOS/disk/"
+cp -r ./1 "$CURPATH/MacOS/disk/bios"
 cd /tmp
 rm -rf NeetComputers
 cd "$CURPATH"
