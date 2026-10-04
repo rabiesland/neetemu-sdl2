@@ -14,6 +14,7 @@
 #include "lua.h"
 #include "lauxlib.h"
 #include "emu.h"
+#include "build.h"
 
 #ifndef NEETEMU_VERSION
 #define NEETEMU_VERSION "dev"
@@ -786,7 +787,10 @@ static void usage(const char *a0) {
     printf("neetemu %s — run NeetComputers Lua machines on your desktop\n",
            NEETEMU_VERSION);
     printf("\nusage: %s [options] [app.lua] [diskdir] [app args...]\n", a0);
-    printf("\nWith no arguments, boots NeetOS on computer 0.\n");
+    printf("\nWith no arguments, boots computer 0: the build.json entrypoint\n");
+    printf("when present (e.g. { \"entrypoint\": \"mypart:boot.lua\", ... }),\n");
+    printf("else bios:bios.lua (NeetOS). An explicit app.lua argument always\n");
+    printf("overrides build.json.\n");
     printf("Each computer id has its own isolated storage in\n");
     printf("  ~/.local/share/neetemu/computers/<id>/\n");
     printf("  ($XDG_DATA_HOME/neetemu/computers/<id>/ if set).\n");
@@ -972,6 +976,22 @@ static void resolve_default_disk(char *out, size_t n, long computer_id) {
     }
 }
 
+static void resolve_default_app(const char *disk, char *out, size_t n) {
+    char entry[BUILD_MAX_ENTRY];
+    if (build_get_boot(disk, entry, sizeof(entry))) {
+        char host[4096];
+        if (build_entry_to_host(disk, entry, host, sizeof(host)) &&
+            access(host, R_OK) == 0) {
+            snprintf(out, n, "%s", host);
+            emu_log("boot entrypoint '%s' from build.json", entry);
+            return;
+        }
+        emu_log("warning: build.json entrypoint '%s' unreadable, "
+                "falling back to bios:bios.lua", entry);
+    }
+    snprintf(out, n, "%s/bios/bios.lua", disk);
+}
+
 int main(int argc, char **argv) {
     Opts o;
     memset(&o, 0, sizeof(o));
@@ -1105,8 +1125,7 @@ int main(int argc, char **argv) {
                                  o.computer_id);
         o.disk = auto_disk;
         if (!o.app_given) {
-            snprintf(auto_app, sizeof(auto_app), "%s/bios/bios.lua",
-                     auto_disk);
+            resolve_default_app(auto_disk, auto_app, sizeof(auto_app));
             o.app = auto_app;
         }
     }

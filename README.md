@@ -4,7 +4,7 @@ Runs NeetComputers Lua machines on desktop.
 
 ## Build
 
-Requires: CMake, C compiler, pkg-config, SDL3.
+Requires: CMake, C compiler, pkg-config, SDL3, Neet-YSLua.
 
 ```sh
 cmake -S . -B build -G Ninja
@@ -12,7 +12,7 @@ cmake --build build
 sudo cmake --install build
 ```
 
-Alternate YSLua path: `-DYSLUA_DIR=/path/to/Neet-YSLua` or `YSLUA_DIR=... cmake ...`.
+YSLua path: `-DYSLUA_DIR=/path/to/Neet-YSLua` or `YSLUA_DIR=... cmake ...`.
 
 ## Usage
 
@@ -25,6 +25,21 @@ neetemu --help            # all options
 ```
 
 Storage: `~/.local/share/neetemu/computers/<id>/` (`$XDG_DATA_HOME` if set). Created from bundled image on first boot. `bios:/path` maps to `<disk>/bios/path`.
+
+## Custom boot path (build.json)
+
+Like NeetComputers, each computer folder may contain a `build.json`:
+
+```json
+{
+    "entrypoint" : "mypart:boot.lua",
+    "language" : "Lua",
+    "partitions" : [
+        { "path" : "bios", "readonly" : false, "hidden" : false },
+        { "path" : "mypart", "readonly" : false, "hidden" : false }
+    ]
+}
+```
 
 ## Keys
 

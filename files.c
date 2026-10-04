@@ -11,6 +11,7 @@
 #include "lua.h"
 #include "lauxlib.h"
 #include "emu.h"
+#include "build.h"
 
 typedef struct { bool rd, wr, trunc, bin, create; } Mode;
 
@@ -388,22 +389,48 @@ static int list_children(lua_State *L, const char *hostdir, const char *part) {
 static int f_getPartitions(lua_State *L) {
     Emu *e = emu_from(L);
     disk_arg(L, 1);
-    DIR *d = opendir(e->disk_root);
     lua_newtable(L);
-    if (!d) return 1;
-    struct dirent *de;
     int n = 0;
-    while ((de = readdir(d)) != NULL) {
-        if (strcmp(de->d_name, ".") == 0 || strcmp(de->d_name, "..") == 0)
-            continue;
-        char full[2048];
-        snprintf(full, sizeof(full), "%s/%s", e->disk_root, de->d_name);
-        if (is_dir_path(full)) {
-            lua_pushstring(L, de->d_name);
+
+    char seen[BUILD_MAX_PARTS][128];
+    int nseen = 0;
+    DIR *d = opendir(e->disk_root);
+    if (d) {
+        struct dirent *de;
+        while ((de = readdir(d)) != NULL) {
+            if (strcmp(de->d_name, ".") == 0 || strcmp(de->d_name, "..") == 0)
+                continue;
+            char full[2048];
+            snprintf(full, sizeof(full), "%s/%s", e->disk_root, de->d_name);
+            if (is_dir_path(full)) {
+                lua_pushstring(L, de->d_name);
+                lua_rawseti(L, -2, ++n);
+                if (nseen < BUILD_MAX_PARTS) {
+                    strncpy(seen[nseen], de->d_name, sizeof(seen[0]) - 1);
+                    seen[nseen][sizeof(seen[0]) - 1] = 0;
+                    nseen++;
+                }
+            }
+        }
+        closedir(d);
+    }
+    BuildPart parts[BUILD_MAX_PARTS];
+    int nparts = BUILD_MAX_PARTS;
+    if (build_get_parts(e->disk_root, parts, &nparts)) {
+        for (int i = 0; i < nparts; i++) {
+            bool dup = false;
+            for (int k = 0; k < nseen; k++)
+                if (strcmp(seen[k], parts[i].path) == 0) { dup = true; break; }
+            if (dup) continue;
+            lua_pushstring(L, parts[i].path);
             lua_rawseti(L, -2, ++n);
+            if (nseen < BUILD_MAX_PARTS) {
+                strncpy(seen[nseen], parts[i].path, sizeof(seen[0]) - 1);
+                seen[nseen][sizeof(seen[0]) - 1] = 0;
+                nseen++;
+            }
         }
     }
-    closedir(d);
     return 1;
 }
 
@@ -412,15 +439,27 @@ static int f_getPartition(lua_State *L) {
     const char *name = lua_tostring(L, 1);
     disk_arg(L, 2);
     if (!name) { lua_pushnil(L); return 1; }
+    bool readonly = false, hidden = false, known = false;
+    BuildPart parts[BUILD_MAX_PARTS];
+    int nparts = BUILD_MAX_PARTS;
+    if (build_get_parts(e->disk_root, parts, &nparts)) {
+        for (int i = 0; i < nparts; i++)
+            if (strcmp(parts[i].path, name) == 0) {
+                readonly = parts[i].readonly;
+                hidden = parts[i].hidden;
+                known = true;
+                break;
+            }
+    }
     char full[2048];
     snprintf(full, sizeof(full), "%s/%s", e->disk_root, name);
-    if (!is_dir_path(full)) { lua_pushnil(L); return 1; }
+    if (!is_dir_path(full) && !known) { lua_pushnil(L); return 1; }
     lua_newtable(L);
     lua_pushstring(L, name);
     lua_setfield(L, -2, "name");
-    lua_pushboolean(L, 0);
+    lua_pushboolean(L, readonly);
     lua_setfield(L, -2, "readonly");
-    lua_pushboolean(L, 0);
+    lua_pushboolean(L, hidden);
     lua_setfield(L, -2, "hidden");
     return 1;
 }
@@ -436,7 +475,9 @@ static int f_createPartition(lua_State *L) {
     char full[2048];
     snprintf(full, sizeof(full), "%s/%s", e->disk_root, name);
     if (path_exists(full)) { lua_pushboolean(L, 0); return 1; }
-    lua_pushboolean(L, mkdir(full, 0755) == 0);
+    bool ok = mkdir(full, 0755) == 0;
+    if (ok) build_add_partition(e->disk_root, name);
+    lua_pushboolean(L, ok);
     return 1;
 }
 
@@ -447,7 +488,9 @@ static int f_deletePartition(lua_State *L) {
     if (!name) { lua_pushboolean(L, 0); return 1; }
     char full[2048];
     snprintf(full, sizeof(full), "%s/%s", e->disk_root, name);
-    lua_pushboolean(L, rmdir(full) == 0);
+    bool ok = rmdir(full) == 0;
+    if (ok) build_remove_partition(e->disk_root, name);
+    lua_pushboolean(L, ok);
     return 1;
 }
 
@@ -556,6 +599,10 @@ static int f_delete(lua_State *L) {
     const char *path = lua_tostring(L, 1);
     disk_arg(L, 2);
     if (!path || strstr(path, "..")) { lua_pushboolean(L, 0); return 1; }
+    char boot[BUILD_MAX_ENTRY];
+    if (build_get_boot(e->disk_root, boot, sizeof(boot)) &&
+        build_same_path(path, boot))
+        luaL_error(L, "Access denied");
     char host[2048];
     map_path(e, L, path, host, sizeof(host));
     bool ok = false;
@@ -590,13 +637,46 @@ static int f_removeDisk(lua_State *L) {
 }
 
 static int f_getBootPath(lua_State *L) {
+    Emu *e = emu_from(L);
     disk_arg(L, 1);
+    char boot[BUILD_MAX_ENTRY];
+    if (build_get_boot(e->disk_root, boot, sizeof(boot))) {
+        lua_pushstring(L, boot);
+        return 1;
+    }
+
+    char bios[2048];
+    snprintf(bios, sizeof(bios), "%s/bios/bios.lua", e->disk_root);
+    struct stat st;
+    if (stat(bios, &st) == 0 && S_ISREG(st.st_mode)) {
+        lua_pushstring(L, "bios:bios.lua");
+        return 1;
+    }
     lua_pushnil(L);
     return 1;
 }
 
 static int f_setBoot(lua_State *L) {
+    Emu *e = emu_from(L);
+    if (lua_isstring(L, 1)) {
+        const char *entry = lua_tostring(L, 1);
+        disk_arg(L, 2);
+        char host[2048];
+        if (!entry || !build_entry_to_host(e->disk_root, entry, host,
+                                           sizeof(host))) {
+            lua_pushboolean(L, 0);
+            return 1;
+        }
+        struct stat st;
+        if (stat(host, &st) != 0 || !S_ISREG(st.st_mode)) {
+            lua_pushboolean(L, 0);
+            return 1;
+        }
+        lua_pushboolean(L, build_set_boot(e->disk_root, entry));
+        return 1;
+    }
 
+    disk_arg(L, 1);
     lua_pushboolean(L, 0);
     return 1;
 }

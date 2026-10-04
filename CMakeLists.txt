@@ -41,7 +41,7 @@ find_package(PkgConfig REQUIRED)
 pkg_check_modules(SDL3 REQUIRED sdl3)
 
 add_executable(neetemu
-  main.c sched.c screen.c event.c files.c chip.c io.c overlay.c)
+  main.c sched.c screen.c event.c files.c chip.c io.c overlay.c build.c)
 
 target_include_directories(neetemu PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}
