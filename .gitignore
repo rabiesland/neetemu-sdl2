@@ -1,5 +1,6 @@
 cmake-build-*/
 out/
+build/
 
 CMakeCache.txt
 CMakeFiles/
