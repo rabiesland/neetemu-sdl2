@@ -38,18 +38,18 @@ set(YSLUA_BUILD_RUNTIME_SHARED ON)
 add_subdirectory(${YSLUA_DIR}/lua yslua_lua)
 
 find_package(PkgConfig REQUIRED)
-pkg_check_modules(SDL3 REQUIRED sdl3)
+pkg_check_modules(SDL2 REQUIRED sdl2)
 
 add_executable(neetemu
-  main.c sched.c screen.c event.c files.c chip.c io.c overlay.c build.c)
+  compat.c main.c sched.c screen.c event.c files.c chip.c io.c overlay.c build.c)
 
 target_include_directories(neetemu PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}
   ${YSLUA_DIR}/lua)
 
-target_compile_options(neetemu PRIVATE ${SDL3_CFLAGS})
-target_link_directories(neetemu PRIVATE ${SDL3_LIBRARY_DIRS})
-target_link_libraries(neetemu PRIVATE yslua ${SDL3_LIBRARIES} m ${CMAKE_DL_LIBS})
+target_compile_options(neetemu PRIVATE ${SDL2_CFLAGS})
+target_link_directories(neetemu PRIVATE ${SDL2_LIBRARY_DIRS})
+target_link_libraries(neetemu PRIVATE yslua ${SDL2_LIBRARIES} m ${CMAKE_DL_LIBS})
 
 add_custom_command(TARGET neetemu POST_BUILD
   COMMAND "${CMAKE_COMMAND}" -E copy_if_different

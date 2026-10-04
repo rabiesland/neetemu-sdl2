@@ -4,6 +4,7 @@
 #include <stdarg.h>
 #include <time.h>
 
+#include "compat.h"
 #include "lua.h"
 #include "lauxlib.h"
 #include "lualib.h"
@@ -11,7 +12,7 @@
 
 double emu_now(void) {
     struct timespec ts;
-    clock_gettime(CLOCK_MONOTONIC, &ts);
+    clockGetTime(clockMonotonic, &ts);
     return (double)ts.tv_sec + (double)ts.tv_nsec / 1e9;
 }
 

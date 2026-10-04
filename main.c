@@ -7,7 +7,7 @@
 #include <sys/types.h>
 #include <unistd.h>
 
-#include <SDL3/SDL.h>
+#include <SDL2/SDL.h>
 
 #include <dlfcn.h>
 
@@ -58,7 +58,7 @@ static void do_present(Emu *e) {
     if (g_tex) {
         SDL_UpdateTexture(g_tex, NULL, g_argb, NEET_W * sizeof(uint32_t));
         SDL_RenderClear(g_ren);
-        SDL_RenderTexture(g_ren, g_tex, NULL, NULL);
+        SDL_RenderCopy(g_ren, g_tex, NULL, NULL);
         SDL_RenderPresent(g_ren);
     }
 }
@@ -81,9 +81,10 @@ static void snapshot(Emu *e) {
     snprintf(path, sizeof(path), "snapshots/snap_%04d.bmp", no);
 
     do_present(e);
-    SDL_Surface *s = SDL_CreateSurfaceFrom(NEET_W, NEET_H,
-                                           SDL_PIXELFORMAT_ARGB8888,
-                                           g_argb, NEET_W * 4);
+    //SDL_Surface *s = SDL_CreateSurfaceFrom(NEET_W, NEET_H,
+    //                                       SDL_PIXELFORMAT_ARGB8888,
+    //                                       g_argb, NEET_W * 4);
+    SDL_Surface *s = SDL_CreateRGBSurfaceWithFormatFrom(g_argb,NEET_W,NEET_H,24,NEET_W*4,SDL_PIXELFORMAT_ARGB8888);
     if (!s) {
         emu_log("snapshot failed: %s", SDL_GetError());
         return;
@@ -92,15 +93,15 @@ static void snapshot(Emu *e) {
         emu_log("snapshot -> %s", path);
     else
         emu_log("snapshot failed: %s", SDL_GetError());
-    SDL_DestroySurface(s);
+    SDL_FreeSurface(s);
 }
 
 static void fb_map(Emu *e, float wx, float wy, int *lx, int *ly) {
     (void)e;
     if (g_ren) {
         float fx, fy;
-        if (SDL_RenderCoordinatesFromWindow(g_ren, wx, wy, &fx, &fy)
-            && fx >= 0.0f && fx < (float)NEET_W
+        SDL_RenderWindowToLogical(g_ren, wx, wy, &fx, &fy);
+        if (fx >= 0.0f && fx < (float)NEET_W
             && fy >= 0.0f && fy < (float)NEET_H) {
             *lx = (int)fx;
             *ly = (int)fy;
@@ -196,11 +197,11 @@ static void in_button(Emu *e, int x, int y, int key, bool down) {
 }
 
 static int neet_key(SDL_Keycode k, SDL_Keymod mod, char *letter) {
-    bool shift = (mod & SDL_KMOD_SHIFT) != 0;
+    bool shift = (mod & KMOD_SHIFT) != 0;
     letter[0] = 0;
     int code = 0;
-    if (k >= SDLK_A && k <= SDLK_Z) {
-        bool up = shift || (mod & SDL_KMOD_CAPS);
+    if (k >= SDLK_a && k <= SDLK_z) {
+        bool up = shift || (mod & KMOD_CAPS);
         code = up ? (int)(k - 32) : (int)k;
     } else if (k >= SDLK_0 && k <= SDLK_9) {
         if (shift) {
@@ -253,8 +254,8 @@ static int neet_key(SDL_Keycode k, SDL_Keymod mod, char *letter) {
 }
 
 static int neet_mods(SDL_Keymod m) {
-    return ((m & SDL_KMOD_SHIFT) ? 1 : 0) | ((m & SDL_KMOD_CTRL) ? 2 : 0) |
-           ((m & SDL_KMOD_ALT) ? 4 : 0) | ((m & SDL_KMOD_GUI) ? 8 : 0);
+    return ((m & KMOD_SHIFT) ? 1 : 0) | ((m & KMOD_CTRL) ? 2 : 0) |
+           ((m & KMOD_ALT) ? 4 : 0) | ((m & KMOD_GUI) ? 8 : 0);
 }
 
 static bool pump_input(Emu *e, const Opts *o) {
@@ -262,24 +263,24 @@ static bool pump_input(Emu *e, const Opts *o) {
     SDL_Event ev;
     while (SDL_PollEvent(&ev)) {
         switch (ev.type) {
-        case SDL_EVENT_QUIT:
+        case SDL_QUIT:
             return false;
-        case SDL_EVENT_MOUSE_MOTION: {
+        case SDL_MOUSEMOTION: {
             int fx, fy;
             fb_map(e, ev.motion.x, ev.motion.y, &fx, &fy);
             in_motion(e, fx, fy);
             break;
         }
-        case SDL_EVENT_MOUSE_BUTTON_DOWN:
-        case SDL_EVENT_MOUSE_BUTTON_UP: {
-            bool down = ev.type == SDL_EVENT_MOUSE_BUTTON_DOWN;
+        case SDL_MOUSEBUTTONDOWN:
+        case SDL_MOUSEBUTTONUP: {
+            bool down = ev.type == SDL_MOUSEBUTTONDOWN;
             int k = sdl_btn_to_neet(ev.button.button);
             int fx, fy;
             fb_map(e, ev.button.x, ev.button.y, &fx, &fy);
             in_button(e, fx, fy, k, down);
             break;
         }
-        case SDL_EVENT_MOUSE_WHEEL: {
+        case SDL_MOUSEWHEEL: {
             float wx = 0, wy = 0;
             SDL_GetMouseState(&wx, &wy);
             int x, y;
@@ -292,14 +293,14 @@ static bool pump_input(Emu *e, const Opts *o) {
             if (inside(x, y)) ev_push_scroll(e, x, y, h, v);
             break;
         }
-        case SDL_EVENT_KEY_DOWN:
-        case SDL_EVENT_KEY_UP: {
-            bool down = ev.type == SDL_EVENT_KEY_DOWN;
+        case SDL_KEYDOWN:
+        case SDL_KEYUP: {
+            bool down = ev.type == SDL_KEYDOWN;
             if (down && ev.key.repeat) break;
-            SDL_Keycode k = ev.key.key;
+            SDL_Keycode k = ev.key.keysym.sym;
 
             if (k == SDLK_1 || k == SDLK_2) {
-                if ((ev.key.mod & SDL_KMOD_CTRL) != 0) {
+                if ((ev.key.keysym.mod & KMOD_CTRL) != 0) {
                     if (down) {
                         int z = (k == SDLK_1) ? 1 : 2;
                         ((Emu *)e)->zoom = z;
@@ -330,10 +331,10 @@ static bool pump_input(Emu *e, const Opts *o) {
                 break;
             }
             char letter[2] = { 0, 0 };
-            int code = neet_key(k, ev.key.mod, letter);
+            int code = neet_key(k, ev.key.keysym.mod, letter);
             if (code != 0)
                 ev_push_key(e, down ? "keyPressed" : "keyReleased",
-                            code, letter, neet_mods(ev.key.mod));
+                            code, letter, neet_mods(ev.key.keysym.mod));
             break;
         }
         default:
@@ -352,8 +353,8 @@ static bool run_ticks(Emu *e, long n, double deadline) {
         }
         SDL_PumpEvents();
         SDL_Event ev;
-        while (SDL_PeepEvents(&ev, 1, SDL_GETEVENT, SDL_EVENT_QUIT,
-                              SDL_EVENT_QUIT) > 0)
+        while (SDL_PeepEvents(&ev, 1, SDL_GETEVENT, SDL_QUIT,
+                              SDL_QUIT) > 0)
             return false;
         emu_step(e);
         if (e->reboot_requested) emu_boot(e);
@@ -1134,30 +1135,34 @@ int main(int argc, char **argv) {
         setenv("SDL_VIDEODRIVER", "dummy", 1);
         setenv("SDL_AUDIODRIVER", "dummy", 1);
     }
-    if (!SDL_Init(SDL_INIT_VIDEO)) {
+    if (SDL_Init(SDL_INIT_VIDEO) != 0) {
         fprintf(stderr, "SDL_Init: %s\n", SDL_GetError());
         return 1;
     }
+    //g_win = SDL_CreateWindow("neetemu " NEETEMU_VERSION,
+    //                         NEET_W * o.zoom, NEET_H * o.zoom,
+    //                          SDL_WINDOW_RESIZABLE);
     g_win = SDL_CreateWindow("neetemu " NEETEMU_VERSION,
+                             SDL_WINDOWPOS_CENTERED,SDL_WINDOWPOS_CENTERED,
                              NEET_W * o.zoom, NEET_H * o.zoom,
-                             SDL_WINDOW_RESIZABLE);
+                              SDL_WINDOW_RESIZABLE);
     if (!g_win) {
         fprintf(stderr, "window: %s\n", SDL_GetError());
         return 1;
     }
-    g_ren = SDL_CreateRenderer(g_win, NULL);
+    g_ren = SDL_CreateRenderer(g_win, -1,0);
     g_tex = g_ren ? SDL_CreateTexture(g_ren, SDL_PIXELFORMAT_ARGB8888,
                                       SDL_TEXTUREACCESS_STREAMING,
                                       NEET_W, NEET_H)
                   : NULL;
     if (g_ren) {
 
-        SDL_SetRenderLogicalPresentation(g_ren, NEET_W, NEET_H,
-                                         SDL_LOGICAL_PRESENTATION_LETTERBOX);
+    //    SDL_SetRenderLogicalPresentation(g_ren, NEET_W, NEET_H,
+    //                                     SDL_LOGICAL_PRESENTATION_LETTERBOX);
     }
     g_argb = (uint32_t *)malloc(NEET_W * NEET_H * 4);
     {
-        const char *rname = (g_ren && g_tex) ? SDL_GetRendererName(g_ren)
+        const char *rname = (g_ren && g_tex) ? "OpenGL"
                                              : "(no renderer)";
         emu_log("video driver=%s renderer=%s",
                 SDL_GetCurrentVideoDriver() ? SDL_GetCurrentVideoDriver()
@@ -1293,7 +1298,7 @@ int main(int argc, char **argv) {
                     const bool *st = SDL_GetKeyboardState(NULL);
                     static bool was = false;
                     bool is = (st[SDL_SCANCODE_L] &&
-                               (SDL_GetModState() & SDL_KMOD_CTRL));
+                               (SDL_GetModState() & KMOD_CTRL));
                     if (is && !was) {
                         emu.overlay = !emu.overlay;
                         emu_log("overlay %s", emu.overlay ? "on" : "off");

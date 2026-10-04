@@ -1,6 +1,7 @@
 #include <string.h>
 #include <time.h>
 
+#include "compat.h"
 #include "lua.h"
 #include "lauxlib.h"
 #include "emu.h"
@@ -13,7 +14,7 @@ static int c_getTime(lua_State *L) {
 
 static int c_getUnixTime(lua_State *L) {
     struct timespec ts;
-    clock_gettime(CLOCK_REALTIME, &ts);
+    clockGetTime(clockRealtime, &ts);
     lua_pushnumber(L, (lua_Number)ts.tv_sec + (lua_Number)ts.tv_nsec / 1e9);
     return 1;
 }
